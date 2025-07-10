@@ -136,22 +136,21 @@ ACME Corporation,<client>,1
 - Processes text in:
   - Paragraphs
   - Table cells
+  - Header
+  - Footer
 - Does *not yet* handle:
-  - Headers
-  - Footers
-  - Text boxes
-  - Comments
-- CSV log makes *future reversal* straightforward.
+  - Text boxes and Shapes
 
 ---
 
-## Suggested Improvements
+## Potential Improvements
 
-- Add header/footer support
 - CLI argument mode (no interactive prompts)
 - Batch substitutions via pre-defined CSV
 - Reversion script to undo changes using the CSV log
 - GUI version
+- Logging and Dry Run
+- Case Insensitive / Regex Matching
 
 ---
 

@@ -53,6 +53,25 @@ def anonymize_docx():
             for cell in row.cells:
                 cell.text = process_text(cell.text, substitutions, stats)
 
+    # 6.5. Process headers and footers
+    for section in doc.sections:
+        # Header paragraphs
+        for para in section.header.paragraphs:
+            para.text = process_text(para.text, substitutions, stats)
+        # Header tables
+        for table in section.header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell.text = process_text(cell.text, substitutions, stats)
+        # Footer paragraphs
+        for para in section.footer.paragraphs:
+            para.text = process_text(para.text, substitutions, stats)
+        # Footer tables
+        for table in section.footer.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell.text = process_text(cell.text, substitutions, stats)
+    
     # 7. Save new file
     dir_name, base_name = os.path.split(file_path)
     name, ext = os.path.splitext(base_name)
