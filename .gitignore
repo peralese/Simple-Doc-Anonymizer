@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# VSCode settings (optional)
+.vscode/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+.env/
+venv/
+.venv/
+
+# Logs and runtime files
+*.log
+
+# Output files
+*_anonymized.docx
+*_substitution_log.csv
+
+# Sensitive files
+*.bak
+*.tmp
+*.old

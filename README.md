@@ -1,58 +1,57 @@
 # Word Document Anonymizer
 
-A simple Python utility to anonymize Microsoft Word (.docx) documents by replacing sensitive terms with placeholders. Supports multiple substitutions in one run and generates a CSV log to track (and potentially revert) changes.
+A Python utility to anonymize Microsoft Word (.docx) files by replacing sensitive terms with placeholders. Supports both interactive and CSV-driven workflows, tracks all substitutions, and saves a log file for possible reversal.
 
 ---
 
-## Features
+## ✅ Features
 
-- Interactive prompts for:
-  - Word file path
-  - Multiple original → replacement term pairs
-- Replaces text in:
-  - Paragraphs
+- Replace multiple terms in one run
+- Option to input terms manually **or** load from CSV
+- Replaces in:
+  - Document body
   - Tables
-- Tracks number of replacements per term
-- Saves:
-  - New anonymized `.docx` file
-  - CSV substitution log
-- CSV log can be used to *revert* changes later
+  - **Headers**
+  - **Footers**
+- Tracks number of replacements for each term
+- Outputs:
+  - Anonymized `.docx` file
+  - Substitution log `.csv` file
 
 ---
 
-## Example Use Case
+## 📁 Supported Input Methods
 
-You have a document mentioning:
+You can provide substitutions in two ways:
 
-- “ACME Corp”
-- “ACME”
-- “ACME Corporation”
+### 1. **Interactive Input**  
+The script prompts you to enter each `original → replacement` pair manually.
 
-You want to replace all with:
+### 2. **CSV File Input**  
+You can also supply a CSV file:
 
+#### CSV Format Example:
+
+```csv
+original,replacement
+ACME Corp,<client>
+John Smith,<person>
+MyProject,<project>
 ```
-<client>
+
+The script will ask:
 ```
-
-After running, the script:
-
-- Anonymizes the document
-- Creates a CSV log like:
-
-| original_term      | replacement_term | occurrences |
-|---------------------|------------------|-------------|
-| ACME Corp           | <client>         | 3           |
-| ACME                | <client>         | 2           |
-| ACME Corporation    | <client>         | 1           |
+Do you have a CSV file with substitutions? (y/n):
+```
 
 ---
 
-## Requirements
+## 💻 Requirements
 
 - Python 3.7 or higher
-- `python-docx` library
+- [`python-docx`](https://pypi.org/project/python-docx/)
 
-Install the dependency with:
+Install via:
 
 ```bash
 pip install python-docx
@@ -60,42 +59,28 @@ pip install python-docx
 
 ---
 
-## How to Use
-
-1. Save the script to a file, e.g. `anonymize_docx.py`.
-
-2. Open your terminal or command prompt.
-
-3. Run the script:
+## 🚀 How to Run
 
 ```bash
 python anonymize_docx.py
 ```
 
-4. Follow the interactive prompts:
-
-- Enter the full path to your `.docx` file.
-- Add one or more original → replacement pairs.
-- Leave blank when finished entering substitutions.
+Follow the prompts:
+- Enter the file path to your `.docx` file
+- Choose input method: interactive or CSV
+- Substitutions are processed and tracked
 
 ---
 
-## Example Interactive Session
+## 📄 Example Session
 
 ```
 $ python anonymize_docx.py
 
 === Word Document Anonymizer ===
 Enter the full path to the .docx file: /Users/me/Documents/report.docx
-
-Enter substitution pairs (original -> replacement).
-Enter original term (or leave blank to finish): ACME Corp
-Enter replacement for 'ACME Corp': <client>
-Enter original term (or leave blank to finish): ACME
-Enter replacement for 'ACME': <client>
-Enter original term (or leave blank to finish): ACME Corporation
-Enter replacement for 'ACME Corporation': <client>
-Enter original term (or leave blank to finish):
+Do you have a CSV file with substitutions? (y/n): y
+Enter the path to the CSV file: /Users/me/Documents/substitutions.csv
 
 Loading document...
 
@@ -105,56 +90,55 @@ Substitution log saved to: /Users/me/Documents/report_substitution_log.csv
 
 Summary of replacements:
   'ACME Corp' -> '<client>': 3 occurrence(s)
-  'ACME' -> '<client>': 2 occurrence(s)
-  'ACME Corporation' -> '<client>': 1 occurrence(s)
+  'John Smith' -> '<person>': 2 occurrence(s)
 ```
 
 ---
 
-## Outputs
+## 📦 Outputs
 
-- **Anonymized DOCX file**
-  - Same folder as original
-  - Named like `report_anonymized.docx`
-- **CSV substitution log**
-  - Same folder as original
-  - Named like `report_substitution_log.csv`
+- **Anonymized DOCX File**  
+  Saved in the same folder as input, named like `report_anonymized.docx`
 
-Example CSV content:
+- **CSV Log File**  
+  Tracks each substitution and count, e.g.:
 
-```
+```csv
 original_term,replacement_term,occurrences
 ACME Corp,<client>,3
-ACME,<client>,2
-ACME Corporation,<client>,1
+John Smith,<person>,2
 ```
 
 ---
 
-## Notes
+## ⚠️ Notes
 
-- Processes text in:
+- Supports replacement in:
   - Paragraphs
-  - Table cells
-  - Header
-  - Footer
-- Does *not yet* handle:
-  - Text boxes and Shapes
+  - Tables
+  - Headers
+  - Footers
+- Does **not yet** support:
+  - Text boxes or drawing shapes
+  - Comments or revisions
+  - Regex/case-insensitive matching
+- These are planned future features (see below)
 
 ---
 
-## Potential Improvements
+## 🛠️ Planned Enhancements
 
-- CLI argument mode (no interactive prompts)
-- Batch substitutions via pre-defined CSV
-- Reversion script to undo changes using the CSV log
-- GUI version
-- Logging and Dry Run
-- Case Insensitive / Regex Matching
+- ✅ Header/Footer support ✅ (*Implemented*)
+- 🟡 Text box and shape support
+- 🟡 Reversion script (undo anonymization using CSV log)
+- 🟡 Logging and dry run mode
+- 🟡 Case-insensitive and regex matching
+- 🟡 GUI version or web front-end
+- 🟡 CLI mode using `argparse`
 
 ---
 
-## License
+## 📜 License
 
 MIT License. Use freely, modify, and share!
 
