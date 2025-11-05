@@ -160,6 +160,12 @@ John Smith,<person>,2
   - Comments or revisions
   - Whole-word-only matching (can be approximated with regex, e.g., `\bterm\b`)
 
+## 🧾 Encoding & BOM
+
+- Inputs (`.json`, `.txt`, CSV substitutions) are read with UTF-8-SIG, which automatically consumes a UTF‑8 BOM if present.
+- Outputs are written as UTF‑8 without BOM.
+- If your files use a different encoding (e.g., ISO-8859-1), convert to UTF‑8 first or adjust the code’s `open(..., encoding=...)` as needed.
+
 ## 🔎 Matching Modes
 - literal (case-sensitive): exact substring replacement (`"Acme"` != `"ACME"`).
 - literal (case-insensitive): uses case-insensitive search, replaces with the provided replacement literal.

@@ -7,7 +7,7 @@ from docx import Document
 def load_substitution_csv(file_path):
     substitutions = []
     try:
-        with open(file_path, mode='r', encoding='utf-8') as f:
+        with open(file_path, mode='r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             if 'original' not in reader.fieldnames or 'replacement' not in reader.fieldnames:
                 print("Error: CSV must contain 'original' and 'replacement' headers.")
@@ -98,7 +98,7 @@ def process_docx(file_path, compiled_substitutions, stats):
 
 def process_txt(file_path, compiled_substitutions, stats):
     print("\nLoading TXT file...")
-    with open(file_path, mode='r', encoding='utf-8') as f:
+    with open(file_path, mode='r', encoding='utf-8-sig') as f:
         content = f.read()
     content = process_text(content, compiled_substitutions, stats)
     dir_name, base_name = os.path.split(file_path)
@@ -125,7 +125,7 @@ def _process_json_values(node, compiled_substitutions, stats, anonymize_keys=Fal
 def process_json(file_path, compiled_substitutions, stats):
     print("\nLoading JSON file...")
     try:
-        with open(file_path, mode='r', encoding='utf-8') as f:
+        with open(file_path, mode='r', encoding='utf-8-sig') as f:
             data = json.load(f)
     except Exception as e:
         print(f"Error reading JSON file: {e}")
