@@ -1,6 +1,6 @@
-# Word Document Anonymizer
+# Simple Document Anonymizer
 
-A Python utility to anonymize Microsoft Word (.docx) files by replacing sensitive terms with placeholders. Supports both interactive and CSV-driven workflows, tracks all substitutions, and saves a log file for possible reversal.
+A Python utility to anonymize documents by replacing sensitive terms with placeholders. Now supports `.docx`, `.txt`, and `.json`. Supports both interactive and CSV-driven workflows, tracks all substitutions, and saves a log file for possible reversal.
 
 ---
 
@@ -8,11 +8,11 @@ A Python utility to anonymize Microsoft Word (.docx) files by replacing sensitiv
 
 - Replace multiple terms in one run
 - Option to input terms manually **or** load from CSV
-- Replaces in:
-  - Document body
-  - Tables
-  - **Headers**
-  - **Footers**
+- DOCX coverage:
+  - Document body, tables, **headers**, **footers**
+- TXT coverage: entire file content
+- JSON coverage: all string values (optional: string keys)
+- Matching modes: literal or regex; optional case-insensitive
 - Tracks number of replacements for each term
 - Outputs:
   - Anonymized `.docx` file
@@ -49,7 +49,7 @@ Do you have a CSV file with substitutions? (y/n):
 ## 💻 Requirements
 
 - Python 3.7 or higher
-- [`python-docx`](https://pypi.org/project/python-docx/)
+- [`python-docx`](https://pypi.org/project/python-docx/) (for `.docx` files)
 
 Install via:
 
@@ -62,7 +62,7 @@ pip install python-docx
 ## 🚀 How to Run
 
 ```bash
-python anonymize_docx.py
+python main.py
 ```
 
 Follow the prompts:
@@ -72,13 +72,13 @@ Follow the prompts:
 
 ---
 
-## 📄 Example Session
+## 📄 Example Session (DOCX)
 
 ```
-$ python anonymize_docx.py
+$ python main.py
 
-=== Word Document Anonymizer ===
-Enter the full path to the .docx file: /Users/me/Documents/report.docx
+=== File Anonymizer (.docx, .txt, .json) ===
+Enter the full path to the file: /Users/me/Documents/report.docx
 Do you have a CSV file with substitutions? (y/n): y
 Enter the path to the CSV file: /Users/me/Documents/substitutions.csv
 
@@ -95,10 +95,50 @@ Summary of replacements:
 
 ---
 
+## 📄 Example Session (TXT)
+
+```
+$ python main.py
+
+=== File Anonymizer (.docx, .txt, .json) ===
+Enter the full path to the file: /Users/me/Documents/notes.txt
+Do you have a CSV file with substitutions? (y/n): n
+Enter substitution pairs (original -> replacement).
+Enter original term (or leave blank to finish): ACME
+Enter replacement for 'ACME': <client>
+Enter original term (or leave blank to finish): 
+
+=== Anonymization Complete ===
+Anonymized file saved to: /Users/me/Documents/notes_anonymized.txt
+Substitution log saved to: /Users/me/Documents/notes_substitution_log.csv
+```
+
+## 📄 Example Session (JSON)
+
+```
+$ python main.py
+
+=== File Anonymizer (.docx, .txt, .json) ===
+Enter the full path to the file: /Users/me/data/sample.json
+Do you have a CSV file with substitutions? (y/n): y
+Enter the path to the CSV file: /Users/me/data/subs.csv
+Also anonymize string keys in JSON? (y/n): n
+Choose matching mode:
+  1) literal (case-sensitive)
+  2) literal (case-insensitive)
+  3) regex (case-sensitive)
+  4) regex (case-insensitive)
+Enter 1, 2, 3, or 4: 2
+
+=== Anonymization Complete ===
+Anonymized file saved to: /Users/me/data/sample_anonymized.json
+Substitution log saved to: /Users/me/data/sample_substitution_log.csv
+```
+
 ## 📦 Outputs
 
-- **Anonymized DOCX File**  
-  Saved in the same folder as input, named like `report_anonymized.docx`
+- **Anonymized File**  
+  Saved in the same folder as input, named like `report_anonymized.docx`, `notes_anonymized.txt`, or `sample_anonymized.json`.
 
 - **CSV Log File**  
   Tracks each substitution and count, e.g.:
@@ -113,15 +153,20 @@ John Smith,<person>,2
 
 ## ⚠️ Notes
 
-- Supports replacement in:
-  - Paragraphs
-  - Tables
-  - Headers
-  - Footers
+- DOCX supports replacement in: paragraphs, tables, headers, footers
+- JSON anonymizes string values; string keys optional via prompt
 - Does **not yet** support:
   - Text boxes or drawing shapes
   - Comments or revisions
-  - Regex/case-insensitive matching
+  - Whole-word-only matching (can be approximated with regex, e.g., `\bterm\b`)
+
+## 🔎 Matching Modes
+- literal (case-sensitive): exact substring replacement (`"Acme"` != `"ACME"`).
+- literal (case-insensitive): uses case-insensitive search, replaces with the provided replacement literal.
+- regex (case-sensitive/insensitive): treats `original` as a regex pattern.
+  - CSV input: `original` is interpreted as a regex when regex mode is selected.
+  - Example whole-word email: `(?i)\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b`
+  - Example whole-word client: `\bACME\b`
 - These are planned future features (see below)
 
 ---
