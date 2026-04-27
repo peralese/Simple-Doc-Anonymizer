@@ -1,173 +1,237 @@
-# Doc Anonymizer v2 — Two-Stage PII Redaction Pipeline
+# Doc Anonymizer — Human-in-the-Loop PII Redaction Pipeline
 
-A local, offline-capable CLI tool that redacts Personally Identifiable Information (PII) from documents using a two-stage pipeline:
+A local, offline-capable CLI tool that redacts Personally Identifiable Information (PII)
+from documents. The pipeline has two modes:
 
-1. **Stage 1 — Pattern Matcher**: Fast regex-based replacement of known org-specific terms (names, project codes, hostnames, etc.) from a user-supplied word list.
-2. **Stage 2 — OpenAI Privacy Filter**: Context-aware PII detection using the [`openai/privacy-filter`](https://huggingface.co/openai/privacy-filter) model via HuggingFace Transformers — catches names, emails, phone numbers, SSNs, and other PII that the word list missed.
+| Mode | When to use |
+|------|-------------|
+| **Human-reviewed** (recommended) | Sensitive documents where false positives or missed PII have real consequences |
+| **Automated** (quick pass) | Low-stakes documents, bulk processing, or when speed matters more than precision |
 
 **All processing runs locally. No data leaves the machine.**
 
 ---
 
-## Why Two Stages?
+## Architecture: Human-in-the-Loop
 
-| | Stage 1 | Stage 2 |
-|---|---|---|
-| **Strength** | Zero false-negatives for known terms; instant | Context-aware; catches unknown PII |
-| **Weakness** | Only finds what you list | Needs surrounding context; may miss single words |
-| **Best for** | Project codes, hostnames, org names | Names, emails, phone numbers, SSNs |
+```
+doc-anonymizer-v2/detect.py          anonymize.py --review
+  ↓                                      ↓
+  Document → Privacy Filter → CSV  →  [HUMAN REVIEWS]  →  Redacted Document
+                                                              + Audit Log
+```
 
-The two stages are complementary: Stage 1 provides deterministic recall for org-specific secrets; Stage 2 provides probabilistic coverage for general PII.
+The [`openai/privacy-filter`](https://huggingface.co/openai/privacy-filter) model is a
+**detector**, not a redactor. It returns detected PII spans with confidence scores.
+A human reviews that output — confirming hits, rejecting false positives, adjusting
+replacement tokens, adding anything missed — before `anonymize.py` applies the final
+redactions. The human's decisions are authoritative; the model never re-runs in Phase 2.
+
+This separation matters because:
+
+- **False positives** (over-redaction) make documents meaningless
+- **False negatives** (missed PII) can expose sensitive information
+- The review file is a durable, auditable artifact you can store alongside the output
 
 ---
 
 ## Setup
 
 ```bash
-# 1. Navigate to this directory
+# 1. Navigate to the project root
 cd Simple-Doc-Anonymizer
 
-# 2. Create a virtual environment
+# 2. Create and activate a virtual environment
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-# 3. Install dependencies
+# 3. Install dependencies (covers both detect.py and anonymize.py)
 pip install -r requirements.txt
 ```
 
-> **First run note**: Stage 2 downloads the `openai/privacy-filter` model (~2.8 GB) from HuggingFace on the first invocation. After that it is cached at `~/.cache/huggingface/hub/`. Subsequent runs are instant.
+> **First run note**: Phase 1 downloads the `openai/privacy-filter` model (~2.8 GB) from
+> HuggingFace on the first invocation. After that it is cached at
+> `~/.cache/huggingface/hub/`. Phase 2 (`anonymize.py --review`) never re-downloads it.
 
 ---
 
-## Usage
+## Human-Reviewed Workflow (Recommended)
 
-```
-python3 anonymize.py --doc <path> [--terms <path>] [--output <path>]
-                     [--pattern-only] [--no-pattern] [--verbose]
-                     [--device cpu|cuda]
+### Phase 1 — Detect
+
+Run the privacy filter against your document. Optionally supply a terms file for
+known org-specific terms the model may miss.
+
+```bash
+python doc-anonymizer-v2/detect.py \
+  --doc input/report.xlsx \
+  --terms input/terms.txt \
+  --threshold 0.85
 ```
 
-### Flags
+Output: `output/report_review.csv`
+
+**Flags:**
 
 | Flag | Description |
-|---|---|
-| `--doc` | **Required.** Path to the input document |
-| `--terms` | Optional. Path to a terms file (one term per line). If omitted, Stage 1 is skipped |
-| `--output` | Optional. Defaults to `output/<stem>_redacted<ext>` |
-| `--pattern-only` | Skip Stage 2 (no model download required) |
-| `--no-pattern` | Skip Stage 1 |
-| `--verbose` | Print full redaction log to console |
+|------|-------------|
+| `--doc` | **Required.** Input document path |
+| `--terms` | Optional. Supplemental terms file (see [Terms File](#terms-file)) |
+| `--threshold` | Float 0–1. Detections below this score are pre-set to `SKIP` while still appearing in the review file. Default: `0.0` (write everything, let human decide). **Tip:** use `0.85` to pre-skip low-confidence hits |
 | `--device` | `cpu` (default) or `cuda` |
 
 ---
 
-## Usage Examples
+### Human Review
 
-### Plain text document
+Open `output/report_review.csv` in Excel, LibreOffice, or any CSV editor.
+
+The file is sorted **confidence ascending** — uncertain detections appear first
+because they need the most attention. High-confidence rows at the bottom need the
+least review time.
+
+| Column | What to do |
+|--------|------------|
+| `word` | The detected text — read-only reference |
+| `label` | PII category detected by the model |
+| `confidence` | 0.0–1.0. `1.0` = terms-file entry (known, not inferred) |
+| `action` | **Edit this.** `REDACT` to apply, `SKIP` to exclude |
+| `replacement` | **Edit this.** Change from generic `[PRIVATE_PERSON]` to something meaningful like `[EMPLOYEE-A]` or `[CLIENT]` |
+| `location` | Where in the document (e.g. `Contacts!B4`, `Para 12`) — read-only reference |
+| `notes` | Free-text for reviewer comments — ignored by `anonymize.py` |
+
+Add rows for any PII the model missed — set `action=REDACT` and fill in `word` and
+`replacement`. Save the file when done.
+
+---
+
+### Phase 2 — Redact
+
 ```bash
-python3 anonymize.py --doc input/sample_document.txt --terms input/terms.txt
+python anonymize.py \
+  --doc input/report.xlsx \
+  --review output/report_review.csv
 ```
 
-### Excel spreadsheet (cell-by-cell, structure preserved)
+`anonymize.py` reads the reviewed CSV, applies only rows marked `REDACT`, and writes
+the redacted document and a JSON audit log. **It never re-runs the model.**
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--doc` | **Required.** Original input document (same file used in detect.py) |
+| `--review` | **Required.** Path to the human-edited review CSV |
+| `--output` | Optional. Defaults to `output/<stem>_redacted<ext>` |
+| `--verbose` | Print each substitution as it is applied |
+
+---
+
+## Automated Mode (Quick Pass)
+
+Runs Stage 1 (pattern match) then Stage 2 (privacy filter) in a single unattended pass.
+No human review step. Suitable for bulk processing or low-stakes documents.
+
 ```bash
-python3 anonymize.py --doc input/sample_document.xlsx --terms input/terms.txt
+python anonymize.py --doc input/report.xlsx --terms input/terms.txt
 ```
 
-### CSV file
-```bash
-python3 anonymize.py --doc data/employees.csv --terms input/terms.txt
-```
+**Additional flags:**
 
-### Word document (.docx)
-```bash
-python3 anonymize.py --doc report.docx --terms input/terms.txt --verbose
-```
+| Flag | Description |
+|------|-------------|
+| `--pattern-only` | Skip Stage 2 (no model download required) |
+| `--no-pattern` | Skip Stage 1 |
+| `--device` | `cpu` (default) or `cuda` |
 
-### PowerPoint presentation (.pptx)
-```bash
-python3 anonymize.py --doc slides.pptx --terms input/terms.txt
-```
+---
 
-### PDF (extracted text → .txt output)
-```bash
-python3 anonymize.py --doc contract.pdf --terms input/terms.txt
-# Output is written as contract_redacted.txt (PDF write-back not supported)
-```
+## End-to-End Example
 
-### Pattern match only (no model download)
 ```bash
-python3 anonymize.py --doc data.xlsx --terms input/terms.txt --pattern-only
-```
+# Phase 1: detect
+python doc-anonymizer-v2/detect.py \
+  --doc input/sample_document.xlsx \
+  --terms input/terms.txt \
+  --threshold 0.85
 
-### Privacy filter only (no word list)
-```bash
-python3 anonymize.py --doc report.docx --no-pattern --device cuda
-```
+# ↓ Open output/sample_document_review.csv in a spreadsheet editor
+# ↓ Change action=SKIP on false positives
+# ↓ Edit replacements: [PRIVATE_PERSON] → [EMPLOYEE-A], etc.
+# ↓ Add any rows the model missed
+# ↓ Save
 
-### Custom output path
-```bash
-python3 anonymize.py --doc input/report.xlsx --terms input/terms.txt \
-                     --output /secure/output/report_clean.xlsx
+# Phase 2: redact
+python anonymize.py \
+  --doc input/sample_document.xlsx \
+  --review output/sample_document_review.csv \
+  --verbose
+
+# Output: output/sample_document_redacted.xlsx
+# Log:    output/sample_document_redacted.log.json
 ```
 
 ---
 
-## Terms File Format
+## Terms File
 
-`input/terms.txt` — one term per line. Lines starting with `#` are comments:
+`input/terms.txt` — supplemental known terms the model may miss (project codes,
+server names, client names). Detected terms are added to the review file with
+`confidence=1.0` and `action=REDACT`, so the human can still override them.
+
+Format: two columns, no header. Left column = text to find
+(case-insensitive). Right column = replacement token.
 
 ```
-# Internal project names
-Project Falcon
-TIGERS
-
-# Infrastructure
-PROD-DB-01
-
-# Org names
-Acme Corporation
+Acme Corporation,[CLIENT]
+Project Falcon,[PROJECT]
+TIGERS,[SYSTEM]
+PROD-DB-01,[SERVER-PROD]
 ```
 
-Terms are matched case-insensitively and sorted longest-first to avoid partial replacements (e.g. "Project Falcon Team" is matched before "Project Falcon").
+> **Note:** The automated `anonymize.py --terms` mode uses a **single-column** terms
+> file (one term per line) and replaces matches with `[KNOWN_TERM]`. The two-column
+> format is for `detect.py` only.
 
 ---
 
-## Output
+## Supported File Formats
 
-### Files produced
+| Format | Read | Write | Notes |
+|--------|------|-------|-------|
+| `.txt`, `.md` | ✅ | ✅ | Plain text |
+| `.docx` | ✅ | ✅ | Paragraph structure preserved |
+| `.xlsx`, `.xls` | ✅ | ✅ | Cell-by-cell; formatting and sheet names preserved |
+| `.csv` | ✅ | ✅ | Headers and structure preserved |
+| `.pdf` | ✅ (extract) | ⚠️ as `.txt` | PDF write-back not supported |
+| `.pptx` | ✅ | ✅ | All slides and shapes processed |
+
+---
+
+## Output Files
 
 | File | Description |
-|---|---|
+|------|-------------|
 | `output/<stem>_redacted<ext>` | Redacted document |
-| `output/<stem>_redacted.log.json` | Redaction log (JSON sidecar) |
+| `output/<stem>_redacted.log.json` | JSON audit log |
+| `output/<stem>_review.csv` | Human-review file (Phase 1 output) |
 
-### Redaction markers
-
-| Source | Marker | Meaning |
-|---|---|---|
-| Stage 1 | `[KNOWN_TERM]` | Matched an entry in your terms file |
-| Stage 2 | `[PRIVATE_PERSON]`, `[SECRET]`, etc. | Model-detected PII label |
-
-### Log schema
+### Audit log schema
 
 ```json
 {
   "source_document": "input/report.xlsx",
   "output_document": "output/report_redacted.xlsx",
-  "timestamp": "2026-04-26T10:30:00.000000",
-  "total_redactions": 70,
+  "timestamp": "2026-04-27T09:45:00.000000",
+  "total_redactions": 12,
   "redactions": [
     {
-      "source": "pattern",
-      "term": "Project Falcon",
-      "location": "sheet='Contacts' row=2 col=1"
-    },
-    {
-      "source": "privacy_filter",
-      "original": "john.smith@acme.com",
-      "label": "PRIVATE_EMAIL",
-      "score": 0.9987,
-      "location": "paragraph 3"
+      "source": "review_csv",
+      "original": "Alice Johnson",
+      "replacement": "[EMPLOYEE-A]",
+      "label": "PRIVATE_PERSON",
+      "confidence": 0.997,
+      "location": "Contacts!A2"
     }
   ]
 }
@@ -175,59 +239,50 @@ Terms are matched case-insensitively and sorted longest-first to avoid partial r
 
 ---
 
-## Supported Formats
+## Project Structure
 
-| Format | Read | Write | Notes |
-|---|---|---|---|
-| `.txt`, `.md` | ✅ | ✅ | Plain text |
-| `.docx` | ✅ | ✅ | Paragraph structure preserved |
-| `.xlsx`, `.xls` | ✅ | ✅ | Cell-by-cell; formatting, sheet names preserved |
-| `.csv` | ✅ | ✅ | Headers and structure preserved |
-| `.pdf` | ✅ (extract) | ⚠️ as `.txt` | PDF write-back not supported |
-| `.pptx` | ✅ | ✅ | All slides and shapes processed |
+```
+Simple-Doc-Anonymizer/
+├── anonymize.py                  # Phase 2 CLI (also supports automated mode)
+├── requirements.txt
+├── README.md
+├── core/
+│   ├── pattern_matcher.py        # Automated mode Stage 1 — regex term replacement
+│   ├── privacy_filter.py         # Automated mode Stage 2 — HuggingFace NER
+│   ├── doc_reader.py             # Format-aware reader
+│   └── doc_writer.py             # Format-aware writer
+├── doc-anonymizer-v2/            # Phase 1 detection tool
+│   ├── detect.py                 # Runs Privacy Filter → writes review CSV
+│   ├── core/                     # Isolated core modules for detect.py
+│   └── input/                    # Sample files for Phase 1
+├── input/
+│   ├── sample_document.txt       # Sample meeting notes with PII
+│   ├── sample_document.xlsx      # Sample spreadsheet with PII
+│   └── terms.txt                 # Org-specific terms (two-column format)
+└── output/                       # All generated files land here
+```
 
 ---
 
 ## Known Limitations
 
-1. **PDF write-back not supported.** PDF output is extracted text saved as `.txt`. Formatting, images, and layout are lost.
+1. **PDF write-back not supported.** PDF output is extracted text saved as `.txt`.
 
-2. **~96% recall, not 100%.** The `openai/privacy-filter` model has a documented recall of approximately 96% on its benchmark. It is **not a compliance tool**. Use it as a first-pass filter; a human review is still recommended for sensitive documents.
+2. **~96% model recall.** `openai/privacy-filter` has documented ~96% recall on its
+   benchmark. It is **not a compliance tool**. The human review step exists precisely
+   to catch the remaining 4%.
 
-3. **Short cells / single words.** The privacy filter needs surrounding context to identify PII. Isolated single-word cells (e.g., a cell containing just "Smith") may not be flagged. The Stage 1 pattern matcher is the primary defence for these cases.
+3. **Short cells / single words.** The privacy filter needs surrounding context.
+   Isolated single-word cells may not be flagged — use the terms file for these cases.
 
-4. **First run downloads ~2.8 GB.** The model is cached after the first download at `~/.cache/huggingface/hub/`.
+4. **First run downloads ~2.8 GB.** The model is cached after the first download at
+   `~/.cache/huggingface/hub/`.
 
-5. **Non-English text.** The model was trained primarily on English text. Performance on other languages is not guaranteed.
-
-6. **Excel read-back compatibility.** `.xls` (old binary format) is read via `openpyxl` in compatibility mode; the output is always `.xlsx`.
+5. **Non-English text.** The model was trained primarily on English. Performance on
+   other languages is not guaranteed.
 
 ---
 
-## Project Structure
-
-```
-Simple-Doc-Anonymizer/
-├── anonymize.py              # CLI entry point
-├── requirements.txt
-├── README.md
-├── core/
-│   ├── __init__.py
-│   ├── pattern_matcher.py    # Stage 1 — regex term replacement
-│   ├── privacy_filter.py     # Stage 2 — HuggingFace token classification
-│   ├── doc_reader.py         # Format-aware reader
-│   └── doc_writer.py         # Format-aware writer
-├── input/
-│   ├── sample_document.txt   # Sample meeting notes with PII
-│   ├── sample_document.xlsx  # Sample spreadsheet with PII
-│   └── terms.txt             # Sample org-specific terms
-└── output/                   # Redacted files land here
-
-```
-## 📜 License
-
-MIT License. Use freely, modify, and share!
-
 ## Author
 
-Erick Perales  — IT Architect, Cloud Migration Specialist
+Erick Perales — IT Architect, Cloud Migration Specialist

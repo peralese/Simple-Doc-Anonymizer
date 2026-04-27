@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Doc Anonymizer v2 — Two-Stage PII Redaction Pipeline."""
+"""Doc Anonymizer — PII Redaction.
+
+Supports two modes:
+  Automated  : python anonymize.py --doc <path> --terms <path>
+               Runs Stage 1 (pattern match) then Stage 2 (privacy filter) in one pass.
+
+  Reviewed   : python anonymize.py --doc <path> --review <csv>
+               Applies a human-reviewed CSV produced by doc-anonymizer-v2/detect.py.
+               Stages 1 and 2 are bypassed — the human's decisions are authoritative.
+"""
 
 import argparse
 import json
+import re
 import sys
 import warnings
 from datetime import datetime
@@ -264,6 +274,200 @@ def _initial_content(payload: dict) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Human-reviewed mode helpers
+# ---------------------------------------------------------------------------
+
+def _read_review_csv(path: str) -> list[dict]:
+    """Read a detect.py review CSV; return only REDACT rows, warn on unknown actions."""
+    import csv as _csv
+    rows: list[dict] = []
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = _csv.DictReader(f)
+        for i, row in enumerate(reader, start=2):
+            action = row.get("action", "").strip().upper()
+            if action == "REDACT":
+                try:
+                    conf = float(row.get("confidence") or 0.0)
+                except ValueError:
+                    conf = 0.0
+                rows.append({
+                    "word":        row.get("word", "").strip(),
+                    "replacement": row.get("replacement", "").strip(),
+                    "label":       row.get("label", "").strip(),
+                    "confidence":  conf,
+                    "location":    row.get("location", "").strip(),
+                })
+            elif action != "SKIP":
+                print(
+                    f"  Warning: review row {i} has unrecognised action "
+                    f"{row.get('action')!r} (word={row.get('word')!r}) — skipping",
+                    file=sys.stderr,
+                )
+    return rows
+
+
+def _apply_subs_to_text(text: str, subs: list[dict]) -> str:
+    for sub in subs:
+        text = re.sub(re.escape(sub["word"]), sub["replacement"], text, flags=re.IGNORECASE)
+    return text
+
+
+def _apply_review_to_content(fmt: str, content: Any, subs: list[dict]) -> tuple[Any, list[dict]]:
+    """Apply CSV substitutions to the v1 content structure. Returns (new_content, log)."""
+    log: list[dict] = []
+
+    def _log_entry(sub: dict, location: str = "") -> dict:
+        e = {
+            "source":      "review_csv",
+            "original":    sub["word"],
+            "replacement": sub["replacement"],
+            "label":       sub["label"],
+            "confidence":  sub["confidence"],
+        }
+        if location:
+            e["location"] = location
+        return e
+
+    if fmt in ("text", "pdf"):
+        for sub in subs:
+            if re.search(re.escape(sub["word"]), content, re.IGNORECASE):
+                log.append(_log_entry(sub))
+        return _apply_subs_to_text(content, subs), log
+
+    elif fmt == "docx":
+        new_paras: list[str] = []
+        for i, para in enumerate(content):
+            for sub in subs:
+                if re.search(re.escape(sub["word"]), para, re.IGNORECASE):
+                    log.append(_log_entry(sub, f"paragraph {i + 1}"))
+            new_paras.append(_apply_subs_to_text(para, subs))
+        return new_paras, log
+
+    elif fmt == "xlsx":
+        new_sheets: dict = {}
+        for sheet_name, rows in content.items():
+            new_rows: list[list] = []
+            for row in rows:
+                new_row: list = []
+                for val in row:
+                    if isinstance(val, str):
+                        for sub in subs:
+                            if re.search(re.escape(sub["word"]), val, re.IGNORECASE):
+                                log.append(_log_entry(sub, sub.get("location", "")))
+                        new_row.append(_apply_subs_to_text(val, subs))
+                    else:
+                        new_row.append(val)
+                new_rows.append(new_row)
+            new_sheets[sheet_name] = new_rows
+        return new_sheets, log
+
+    elif fmt == "csv":
+        new_rows_csv: list[list[str]] = []
+        for r_idx, row in enumerate(content):
+            new_row_csv: list[str] = []
+            for c_idx, val in enumerate(row):
+                if isinstance(val, str):
+                    for sub in subs:
+                        if re.search(re.escape(sub["word"]), val, re.IGNORECASE):
+                            log.append(_log_entry(sub, f"row={r_idx + 1} col={c_idx + 1}"))
+                    new_row_csv.append(_apply_subs_to_text(val, subs))
+                else:
+                    new_row_csv.append(val)
+            new_rows_csv.append(new_row_csv)
+        return new_rows_csv, log
+
+    elif fmt == "pptx":
+        new_slides: list[dict] = []
+        for slide_info in content:
+            new_shapes: list[dict] = []
+            for shape_info in slide_info["shapes"]:
+                new_paras_pptx: list[str] = []
+                for p_idx, para in enumerate(shape_info["paragraphs"]):
+                    location = (
+                        f"slide={slide_info['slide_idx'] + 1} "
+                        f"shape='{shape_info['shape_name']}' "
+                        f"para={p_idx + 1}"
+                    )
+                    for sub in subs:
+                        if re.search(re.escape(sub["word"]), para, re.IGNORECASE):
+                            log.append(_log_entry(sub, location))
+                    new_paras_pptx.append(_apply_subs_to_text(para, subs))
+                new_shapes.append({**shape_info, "paragraphs": new_paras_pptx})
+            new_slides.append({**slide_info, "shapes": new_shapes})
+        return new_slides, log
+
+    return content, []
+
+
+def _run_reviewed(args: argparse.Namespace, now_str: str) -> None:
+    """Phase 2: apply a human-reviewed detect.py CSV to a document."""
+    _banner(now_str)
+
+    review_path = Path(args.review)
+    if not review_path.exists():
+        print(f"  ERROR: review file not found: {args.review}", file=sys.stderr)
+        sys.exit(1)
+
+    # Step 1 — Load review CSV
+    _step(1, 3, f"Loading review file: {args.review}")
+    redact_rows = _read_review_csv(args.review)
+    _indent(f"{len(redact_rows)} REDACT row(s) loaded.")
+
+    # Dedup by word (case-insensitive), longest-first; warn on conflicting replacements
+    seen: dict[str, dict] = {}
+    for row in redact_rows:
+        key = row["word"].lower()
+        if key not in seen:
+            seen[key] = row
+        elif seen[key]["replacement"] != row["replacement"]:
+            print(
+                f"  Warning: conflicting replacements for {row['word']!r} — "
+                f"using first seen: {seen[key]['replacement']!r}",
+                file=sys.stderr,
+            )
+    subs = sorted(seen.values(), key=lambda r: len(r["word"]), reverse=True)
+
+    # Step 2 — Read document
+    _step(2, 3, f"Reading document: {args.doc}")
+    try:
+        payload = doc_reader.read(args.doc)
+    except Exception as exc:
+        print(f"  ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    fmt = payload["format"]
+    current_content = _initial_content(payload)
+    current_content, all_log = _apply_review_to_content(fmt, current_content, subs)
+
+    # Step 3 — Write output
+    output_path = args.output or _default_output_path(args.doc, fmt)
+    _step(3, 3, f"Writing output: {output_path}")
+    try:
+        actual_output = doc_writer.write(payload, current_content, output_path)
+    except Exception as exc:
+        print(f"  ERROR writing output: {exc}", file=sys.stderr)
+        raise
+
+    log_stem = Path(actual_output).stem.replace("_redacted", "")
+    log_path = str(Path(actual_output).parent / f"{log_stem}_redacted.log.json")
+    _write_log(args.doc, actual_output, all_log, log_path)
+
+    if args.verbose and all_log:
+        print()
+        print("  Redaction Log:")
+        for entry in all_log:
+            print(f"    {json.dumps(entry)}")
+
+    print(SEPARATOR)
+    print("  SUMMARY")
+    _summary_line("Mode", "human-reviewed CSV")
+    _summary_line("Substitutions applied", str(len(subs)))
+    _summary_line("Output", actual_output)
+    _summary_line("Log", log_path)
+    print(SEPARATOR)
+
+
+# ---------------------------------------------------------------------------
 # Log writer
 # ---------------------------------------------------------------------------
 
@@ -286,19 +490,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Doc Anonymizer v2 — Two-Stage PII Redaction Pipeline"
     )
-    parser.add_argument("--doc", required=True, help="Path to input document")
-    parser.add_argument("--terms", default=None, help="Path to terms file (Stage 1)")
-    parser.add_argument("--output", default=None, help="Output file path")
-    parser.add_argument("--pattern-only", action="store_true", help="Skip Stage 2")
-    parser.add_argument("--no-pattern", action="store_true", help="Skip Stage 1")
-    parser.add_argument("--verbose", action="store_true", help="Print full redaction log")
-    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    parser.add_argument("--doc",          required=True,                  help="Path to input document")
+    parser.add_argument("--review",        default=None,                   help="Path to human-reviewed detect.py CSV — bypasses Stage 1 and 2")
+    parser.add_argument("--terms",         default=None,                   help="Path to terms file (Stage 1, automated mode only)")
+    parser.add_argument("--output",        default=None,                   help="Output file path")
+    parser.add_argument("--pattern-only",  action="store_true",            help="Skip Stage 2 (automated mode only)")
+    parser.add_argument("--no-pattern",    action="store_true",            help="Skip Stage 1 (automated mode only)")
+    parser.add_argument("--verbose",       action="store_true",            help="Print full redaction log")
+    parser.add_argument("--device",        default="cpu", choices=["cpu", "cuda"])
     args = parser.parse_args()
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # ── Reviewed mode: consume a human-edited detect.py CSV ─────────────────
+    if args.review:
+        _run_reviewed(args, now_str)
+        return
 
     use_pattern = not args.no_pattern and args.terms is not None
     use_privacy = not args.pattern_only
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _banner(now_str)
 
     total_steps = 2 + (1 if use_pattern else 0) + (1 if use_privacy else 0)

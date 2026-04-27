@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Virtual environments
+.env/
+venv/
+.venv/
+
 # VSCode settings (optional)
 .vscode/
 
@@ -10,17 +15,14 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Virtual environments
-.env/
-venv/
-.venv/
+# Generated output files (keep the directories via .gitkeep)
+output/*
+!output/.gitkeep
+doc-anonymizer-v2/output/*
+!doc-anonymizer-v2/output/.gitkeep
 
-# Logs and runtime files
-*.log
-
-# Output files
-*_anonymized.docx
-*_substitution_log.csv
+# Archived / work-in-progress files
+archive/
 
 # Sensitive files
 *.bak
