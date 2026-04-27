@@ -1,0 +1,33 @@
+Meeting Notes — Acme Corporation Q2 Planning Session
+Date: April 26, 2026
+Attendees: Sarah Mitchell (sarah.mitchell@acme.com), James O'Brien, Dr. Linda Zhao
+
+---
+
+1. Project Status Updates
+
+Project Falcon is on track for a May 15 release. Lead engineer Kevin Tran
+(k.tran@acme.com, +1-415-555-0192) confirmed that the TIGERS integration
+passed all staging tests on PROD-DB-01 last Friday.
+
+The eReporting dashboard was demoed by Maria Santos (ext. 4821). Her manager,
+Robert Huang, approved the rollout pending sign-off from the security team.
+
+2. Budget Review
+
+Finance contact: Alice Pemberley, alice.pemberley@acme.com, SSN: 078-05-1120.
+Q2 budget for Project Falcon is $1,250,000. Vendor PO# 99-4471 was issued to
+Nexus Consulting on behalf of Acme Corporation.
+
+3. Action Items
+
+- Kevin Tran to patch PROD-DB-01 by April 30.
+- James O'Brien to coordinate the TIGERS data migration with Sarah Mitchell.
+- eReporting go-live scheduled for May 3. Contact Dr. Linda Zhao for access.
+- All credentials rotated after incident on March 12. API key was:
+  sk-prod-aBcD1234eFgH5678iJkL (now revoked).
+
+4. Next Meeting
+
+May 10, 2026 at 10:00 AM. Dial-in: +1-800-555-0173, PIN: 9934#.
+Remote link shared via Slack with the Acme Corporation all-hands channel.

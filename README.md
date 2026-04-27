@@ -1,194 +1,229 @@
-# Simple Document Anonymizer
+# Doc Anonymizer v2 — Two-Stage PII Redaction Pipeline
 
-A Python utility to anonymize documents by replacing sensitive terms with placeholders. Now supports `.docx`, `.txt`, and `.json`. Supports both interactive and CSV-driven workflows, tracks all substitutions, and saves a log file for possible reversal.
+A local, offline-capable CLI tool that redacts Personally Identifiable Information (PII) from documents using a two-stage pipeline:
 
----
+1. **Stage 1 — Pattern Matcher**: Fast regex-based replacement of known org-specific terms (names, project codes, hostnames, etc.) from a user-supplied word list.
+2. **Stage 2 — OpenAI Privacy Filter**: Context-aware PII detection using the [`openai/privacy-filter`](https://huggingface.co/openai/privacy-filter) model via HuggingFace Transformers — catches names, emails, phone numbers, SSNs, and other PII that the word list missed.
 
-## ✅ Features
-
-- Replace multiple terms in one run
-- Option to input terms manually **or** load from CSV
-- DOCX coverage:
-  - Document body, tables, **headers**, **footers**
-- TXT coverage: entire file content
-- JSON coverage: all string values (optional: string keys)
-- Matching modes: literal or regex; optional case-insensitive
-- Tracks number of replacements for each term
-- Outputs:
-  - Anonymized `.docx` file
-  - Substitution log `.csv` file
+**All processing runs locally. No data leaves the machine.**
 
 ---
 
-## 📁 Supported Input Methods
+## Why Two Stages?
 
-You can provide substitutions in two ways:
+| | Stage 1 | Stage 2 |
+|---|---|---|
+| **Strength** | Zero false-negatives for known terms; instant | Context-aware; catches unknown PII |
+| **Weakness** | Only finds what you list | Needs surrounding context; may miss single words |
+| **Best for** | Project codes, hostnames, org names | Names, emails, phone numbers, SSNs |
 
-### 1. **Interactive Input**  
-The script prompts you to enter each `original → replacement` pair manually.
-
-### 2. **CSV File Input**  
-You can also supply a CSV file:
-
-#### CSV Format Example:
-
-```csv
-original,replacement
-ACME Corp,<client>
-John Smith,<person>
-MyProject,<project>
-```
-
-The script will ask:
-```
-Do you have a CSV file with substitutions? (y/n):
-```
+The two stages are complementary: Stage 1 provides deterministic recall for org-specific secrets; Stage 2 provides probabilistic coverage for general PII.
 
 ---
 
-## 💻 Requirements
-
-- Python 3.7 or higher
-- [`python-docx`](https://pypi.org/project/python-docx/) (for `.docx` files)
-
-Install via:
+## Setup
 
 ```bash
-pip install python-docx
+# 1. Navigate to this directory
+cd Simple-Doc-Anonymizer
+
+# 2. Create a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
 ```
+
+> **First run note**: Stage 2 downloads the `openai/privacy-filter` model (~2.8 GB) from HuggingFace on the first invocation. After that it is cached at `~/.cache/huggingface/hub/`. Subsequent runs are instant.
 
 ---
 
-## 🚀 How to Run
+## Usage
 
+```
+python3 anonymize.py --doc <path> [--terms <path>] [--output <path>]
+                     [--pattern-only] [--no-pattern] [--verbose]
+                     [--device cpu|cuda]
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--doc` | **Required.** Path to the input document |
+| `--terms` | Optional. Path to a terms file (one term per line). If omitted, Stage 1 is skipped |
+| `--output` | Optional. Defaults to `output/<stem>_redacted<ext>` |
+| `--pattern-only` | Skip Stage 2 (no model download required) |
+| `--no-pattern` | Skip Stage 1 |
+| `--verbose` | Print full redaction log to console |
+| `--device` | `cpu` (default) or `cuda` |
+
+---
+
+## Usage Examples
+
+### Plain text document
 ```bash
-python main.py
+python3 anonymize.py --doc input/sample_document.txt --terms input/terms.txt
 ```
 
-Follow the prompts:
-- Enter the file path to your `.docx` file
-- Choose input method: interactive or CSV
-- Substitutions are processed and tracked
-
----
-
-## 📄 Example Session (DOCX)
-
-```
-$ python main.py
-
-=== File Anonymizer (.docx, .txt, .json) ===
-Enter the full path to the file: /Users/me/Documents/report.docx
-Do you have a CSV file with substitutions? (y/n): y
-Enter the path to the CSV file: /Users/me/Documents/substitutions.csv
-
-Loading document...
-
-=== Anonymization Complete ===
-Anonymized document saved to: /Users/me/Documents/report_anonymized.docx
-Substitution log saved to: /Users/me/Documents/report_substitution_log.csv
-
-Summary of replacements:
-  'ACME Corp' -> '<client>': 3 occurrence(s)
-  'John Smith' -> '<person>': 2 occurrence(s)
+### Excel spreadsheet (cell-by-cell, structure preserved)
+```bash
+python3 anonymize.py --doc input/sample_document.xlsx --terms input/terms.txt
 ```
 
----
-
-## 📄 Example Session (TXT)
-
-```
-$ python main.py
-
-=== File Anonymizer (.docx, .txt, .json) ===
-Enter the full path to the file: /Users/me/Documents/notes.txt
-Do you have a CSV file with substitutions? (y/n): n
-Enter substitution pairs (original -> replacement).
-Enter original term (or leave blank to finish): ACME
-Enter replacement for 'ACME': <client>
-Enter original term (or leave blank to finish): 
-
-=== Anonymization Complete ===
-Anonymized file saved to: /Users/me/Documents/notes_anonymized.txt
-Substitution log saved to: /Users/me/Documents/notes_substitution_log.csv
+### CSV file
+```bash
+python3 anonymize.py --doc data/employees.csv --terms input/terms.txt
 ```
 
-## 📄 Example Session (JSON)
-
-```
-$ python main.py
-
-=== File Anonymizer (.docx, .txt, .json) ===
-Enter the full path to the file: /Users/me/data/sample.json
-Do you have a CSV file with substitutions? (y/n): y
-Enter the path to the CSV file: /Users/me/data/subs.csv
-Also anonymize string keys in JSON? (y/n): n
-Choose matching mode:
-  1) literal (case-sensitive)
-  2) literal (case-insensitive)
-  3) regex (case-sensitive)
-  4) regex (case-insensitive)
-Enter 1, 2, 3, or 4: 2
-
-=== Anonymization Complete ===
-Anonymized file saved to: /Users/me/data/sample_anonymized.json
-Substitution log saved to: /Users/me/data/sample_substitution_log.csv
+### Word document (.docx)
+```bash
+python3 anonymize.py --doc report.docx --terms input/terms.txt --verbose
 ```
 
-## 📦 Outputs
+### PowerPoint presentation (.pptx)
+```bash
+python3 anonymize.py --doc slides.pptx --terms input/terms.txt
+```
 
-- **Anonymized File**  
-  Saved in the same folder as input, named like `report_anonymized.docx`, `notes_anonymized.txt`, or `sample_anonymized.json`.
+### PDF (extracted text → .txt output)
+```bash
+python3 anonymize.py --doc contract.pdf --terms input/terms.txt
+# Output is written as contract_redacted.txt (PDF write-back not supported)
+```
 
-- **CSV Log File**  
-  Tracks each substitution and count, e.g.:
+### Pattern match only (no model download)
+```bash
+python3 anonymize.py --doc data.xlsx --terms input/terms.txt --pattern-only
+```
 
-```csv
-original_term,replacement_term,occurrences
-ACME Corp,<client>,3
-John Smith,<person>,2
+### Privacy filter only (no word list)
+```bash
+python3 anonymize.py --doc report.docx --no-pattern --device cuda
+```
+
+### Custom output path
+```bash
+python3 anonymize.py --doc input/report.xlsx --terms input/terms.txt \
+                     --output /secure/output/report_clean.xlsx
 ```
 
 ---
 
-## ⚠️ Notes
+## Terms File Format
 
-- DOCX supports replacement in: paragraphs, tables, headers, footers
-- JSON anonymizes string values; string keys optional via prompt
-- Does **not yet** support:
-  - Text boxes or drawing shapes
-  - Comments or revisions
-  - Whole-word-only matching (can be approximated with regex, e.g., `\bterm\b`)
+`input/terms.txt` — one term per line. Lines starting with `#` are comments:
 
-## 🧾 Encoding & BOM
+```
+# Internal project names
+Project Falcon
+TIGERS
 
-- Inputs (`.json`, `.txt`, CSV substitutions) are read with UTF-8-SIG, which automatically consumes a UTF‑8 BOM if present.
-- Outputs are written as UTF‑8 without BOM.
-- If your files use a different encoding (e.g., ISO-8859-1), convert to UTF‑8 first or adjust the code’s `open(..., encoding=...)` as needed.
+# Infrastructure
+PROD-DB-01
 
-## 🔎 Matching Modes
-- literal (case-sensitive): exact substring replacement (`"Acme"` != `"ACME"`).
-- literal (case-insensitive): uses case-insensitive search, replaces with the provided replacement literal.
-- regex (case-sensitive/insensitive): treats `original` as a regex pattern.
-  - CSV input: `original` is interpreted as a regex when regex mode is selected.
-  - Example whole-word email: `(?i)\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b`
-  - Example whole-word client: `\bACME\b`
-- These are planned future features (see below)
+# Org names
+Acme Corporation
+```
+
+Terms are matched case-insensitively and sorted longest-first to avoid partial replacements (e.g. "Project Falcon Team" is matched before "Project Falcon").
 
 ---
 
-## 🛠️ Planned Enhancements
+## Output
 
-- ✅ Header/Footer support ✅ (*Implemented*)
-- 🟡 Text box and shape support
-- 🟡 Reversion script (undo anonymization using CSV log)
-- 🟡 Logging and dry run mode
-- 🟡 Case-insensitive and regex matching
-- 🟡 GUI version or web front-end
-- 🟡 CLI mode using `argparse`
+### Files produced
+
+| File | Description |
+|---|---|
+| `output/<stem>_redacted<ext>` | Redacted document |
+| `output/<stem>_redacted.log.json` | Redaction log (JSON sidecar) |
+
+### Redaction markers
+
+| Source | Marker | Meaning |
+|---|---|---|
+| Stage 1 | `[KNOWN_TERM]` | Matched an entry in your terms file |
+| Stage 2 | `[PRIVATE_PERSON]`, `[SECRET]`, etc. | Model-detected PII label |
+
+### Log schema
+
+```json
+{
+  "source_document": "input/report.xlsx",
+  "output_document": "output/report_redacted.xlsx",
+  "timestamp": "2026-04-26T10:30:00.000000",
+  "total_redactions": 70,
+  "redactions": [
+    {
+      "source": "pattern",
+      "term": "Project Falcon",
+      "location": "sheet='Contacts' row=2 col=1"
+    },
+    {
+      "source": "privacy_filter",
+      "original": "john.smith@acme.com",
+      "label": "PRIVATE_EMAIL",
+      "score": 0.9987,
+      "location": "paragraph 3"
+    }
+  ]
+}
+```
 
 ---
 
+## Supported Formats
+
+| Format | Read | Write | Notes |
+|---|---|---|---|
+| `.txt`, `.md` | ✅ | ✅ | Plain text |
+| `.docx` | ✅ | ✅ | Paragraph structure preserved |
+| `.xlsx`, `.xls` | ✅ | ✅ | Cell-by-cell; formatting, sheet names preserved |
+| `.csv` | ✅ | ✅ | Headers and structure preserved |
+| `.pdf` | ✅ (extract) | ⚠️ as `.txt` | PDF write-back not supported |
+| `.pptx` | ✅ | ✅ | All slides and shapes processed |
+
+---
+
+## Known Limitations
+
+1. **PDF write-back not supported.** PDF output is extracted text saved as `.txt`. Formatting, images, and layout are lost.
+
+2. **~96% recall, not 100%.** The `openai/privacy-filter` model has a documented recall of approximately 96% on its benchmark. It is **not a compliance tool**. Use it as a first-pass filter; a human review is still recommended for sensitive documents.
+
+3. **Short cells / single words.** The privacy filter needs surrounding context to identify PII. Isolated single-word cells (e.g., a cell containing just "Smith") may not be flagged. The Stage 1 pattern matcher is the primary defence for these cases.
+
+4. **First run downloads ~2.8 GB.** The model is cached after the first download at `~/.cache/huggingface/hub/`.
+
+5. **Non-English text.** The model was trained primarily on English text. Performance on other languages is not guaranteed.
+
+6. **Excel read-back compatibility.** `.xls` (old binary format) is read via `openpyxl` in compatibility mode; the output is always `.xlsx`.
+
+---
+
+## Project Structure
+
+```
+Simple-Doc-Anonymizer/
+├── anonymize.py              # CLI entry point
+├── requirements.txt
+├── README.md
+├── core/
+│   ├── __init__.py
+│   ├── pattern_matcher.py    # Stage 1 — regex term replacement
+│   ├── privacy_filter.py     # Stage 2 — HuggingFace token classification
+│   ├── doc_reader.py         # Format-aware reader
+│   └── doc_writer.py         # Format-aware writer
+├── input/
+│   ├── sample_document.txt   # Sample meeting notes with PII
+│   ├── sample_document.xlsx  # Sample spreadsheet with PII
+│   └── terms.txt             # Sample org-specific terms
+└── output/                   # Redacted files land here
+
+```
 ## 📜 License
 
 MIT License. Use freely, modify, and share!

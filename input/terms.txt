@@ -1,0 +1,8 @@
+# Org-specific terms to redact (Stage 1 — Pattern Matcher)
+# One term per line. Lines starting with # are ignored.
+
+Acme Corporation
+Project Falcon
+TIGERS
+eReporting
+PROD-DB-01
