@@ -27,7 +27,7 @@ def load_model(device: str = "cpu") -> None:
     _pipeline = hf_pipeline(
         task="token-classification",
         model="openai/privacy-filter",
-        aggregation_strategy="simple",
+        aggregation_strategy="max",   # merges consecutive same-label spans, reports highest token score
         device=0 if device == "cuda" else -1,
     )
 
