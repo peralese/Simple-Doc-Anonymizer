@@ -1,0 +1,6 @@
+transformers>=4.50
+torch
+openpyxl
+python-docx
+python-pptx
+pdfplumber

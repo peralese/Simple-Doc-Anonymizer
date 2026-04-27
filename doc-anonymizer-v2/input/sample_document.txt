@@ -1,0 +1,40 @@
+Meeting Notes — Strategic Planning Session
+Date: March 15, 2026
+Location: 1234 Oak Street, Suite 500, Chicago, IL 60601
+
+Attendees:
+  Alice Johnson (alice.johnson@acme.com, (555) 234-5678)
+  Bob Martinez (bob.martinez@acme.com, (555) 345-6789)
+  Carol White (carol.white@acme.com)
+
+Facilitator: David Lee — david.lee@acme.com
+
+--- Project Updates ---
+
+1. Project Falcon — Lead: Alice Johnson
+   The Acme Corporation TIGERS platform will be migrated to PROD-DB-01 by end of Q3.
+   Alice confirmed that eReporting integration with the legacy finance system is on track.
+   Estimated go-live: September 30, 2026.
+   Budget reference account: ACCT-2026-00422.
+
+2. Data Migration Initiative — Lead: Bob Martinez
+   Staging environment API key: sk-a1b2c3d4e5f6g7h8 (rotate immediately after demo).
+   External vendor contact: support@cloudvendor.io, phone (800) 555-0199.
+   Bob noted that Acme Corporation's legal team must sign off before production access.
+
+3. Compliance Review — Lead: Carol White
+   SSN surfaced in audit trail: 123-45-6789 (flagged for secure deletion).
+   Meeting with outside counsel scheduled for April 2, 2026.
+   Outside counsel direct line: 312-555-0173.
+
+--- Action Items ---
+
+  - Alice Johnson to distribute updated timeline to david.lee@acme.com by March 20, 2026.
+  - Bob Martinez to rotate API key sk-a1b2c3d4e5f6g7h8 and confirm with emma.davis@acme.com.
+  - Carol White to coordinate with outside counsel at 312-555-0173.
+  - All leads to review the eReporting UAT results shared by Acme Corporation IS team.
+
+--- Next Meeting ---
+
+  April 10, 2026 at 2:00 PM CST
+  Dial-in: (888) 555-0100, Passcode: 947321

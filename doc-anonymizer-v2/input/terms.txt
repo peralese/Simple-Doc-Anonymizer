@@ -1,0 +1,8 @@
+# Supplemental known terms — format: term,[REPLACEMENT]
+# These bypass the model. Entries are added to the review file with confidence=1.0 and action=REDACT.
+# Human can still change action to SKIP in the review file if needed.
+Acme Corporation,[CLIENT]
+Project Falcon,[PROJECT]
+TIGERS,[SYSTEM]
+eReporting,[SYSTEM]
+PROD-DB-01,[SERVER-PROD]
